@@ -194,10 +194,6 @@ const text = program.args.join(" ") + `\n${hashtags}`
 const token = (options.token||process.env.LINKEDIN_TOKEN)
 if( !token ){
     oauth()
-        .then(()=>{console.log("Done")});
 }else {
     publish(text, options.image, token, (options.user || process.env.LINKEDIN_USERNAME))
-        .then(() => {
-            console.log("Done")
-        });
 }

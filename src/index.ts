@@ -102,7 +102,7 @@ async function publish(str: string, image:string, accessToken:string, author:str
                     }
             }
         }
-if(true)return;
+
         const response = await axios.post('/rest/posts', payload, {
             headers: {
                 Authorization : `Bearer ${accessToken}`

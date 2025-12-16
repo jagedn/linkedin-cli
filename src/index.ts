@@ -303,7 +303,7 @@ async function webserver(msg:string, str?:string, imageUrl?:string){
             <div class="post-content">
                 ${str}
             </div>
-            la imagen ${imageUrl} ${imageBlock}
+            ${imageBlock}
         </div>
         
     </div>

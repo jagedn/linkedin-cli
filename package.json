@@ -4,9 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "ts-node ./src/index.ts",
+    "preview": "ts-node ./src/index.ts -p --footer=a,b -i example.jpeg Nuevo \\#PetProject linkedcli \\\\nPublica desde la consola y así no tener ni que entrar a leer post de la AI",
+    "previewfile": "ts-node ./src/index.ts -p --footer=PetProject,LinkedinCli -i example.jpeg -f example.txt",
     "build": "npx tsc",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "login": "ts-node ./src/index.ts login"
   },
   "keywords": [],
   "author": "",
@@ -14,6 +15,7 @@
   "type": "commonjs",
   "dependencies": {
     "axios": "^1.13.2",
+    "colorts": "^0.1.63",
     "commander": "^14.0.2",
     "dotenv": "^17.2.3",
     "express": "^5.2.1"

@@ -1,7 +1,9 @@
 #! /usr/bin/env node
 import express, { Request, Response } from "express";
+import colors from 'colorts';
 import {config as configDotenv} from 'dotenv'
 import axios, { AxiosError, AxiosResponse } from 'axios';
+import path from "node:path";
 const { Command } = require("commander");
 
 const fs = require("fs");
@@ -22,19 +24,19 @@ axios.interceptors.response.use(
         const { data, status, config } = error.response!;
         switch (status) {
             case 400:
-                console.error(data);
+                console.error(colors(`${data}`).red+"");
                 break;
 
             case 401:
-                console.error('unauthorised');
+                console.error(colors('unauthorised').red+"");
                 break;
 
             case 404:
-                console.error('/not-found');
+                console.error(colors('/not-found').red+"");
                 break;
 
             case 500:
-                console.error('/server-error');
+                console.error(colors('/server-error').red+"");
                 break;
         }
         return Promise.reject(error);
@@ -66,26 +68,35 @@ async function upload(image:string, accessToken:string, author:string){
     const mediaId = respInit.data.value.image;
     const fsImage = fs.readFileSync(image);
 
-    const respUpload = await axios.put<string>(uploadUrl, fsImage, {
+    await axios.put<string>(uploadUrl, fsImage, {
         headers: {
             'Content-Type': 'image/jpg',
             Authorization: `Bearer ${accessToken}`
         }
     })
-    console.log("Document upload successfully. "+ respUpload.statusText);
+    console.log(colors("Document upload successfully. ").blue+"");
     return mediaId;
 }
 
-async function publish(str: string, image:string, accessToken:string, author:string) {
+async function publish(text: string, image?:string, accessToken?:string, author?:string) {
     if(!accessToken){
         throw new Error("Token not provided");
     }
+    if(!author){
+        throw new Error("Author not provided");
+    }
+
+    const regexHashtag = /#([a-zA-Z0-9_]+)/g;
+    const converted = text.replace(regexHashtag, (match, hashtagText) => {
+        return `{hashtag|\\#|${hashtagText}}`;
+    }).replace("\\n", "\n");
+
 
     try {
         var imageId = await(image ? upload(image, accessToken, author) : null);
         var payload = {
             "author": "urn:li:person:"+author,
-            "commentary": str,
+            "commentary": converted,
             "visibility": "PUBLIC",
             "distribution": {
                 "feedDistribution": "MAIN_FEED"
@@ -103,19 +114,19 @@ async function publish(str: string, image:string, accessToken:string, author:str
             }
         }
 
-        const response = await axios.post('/rest/posts', payload, {
+        await axios.post('/rest/posts', payload, {
             headers: {
                 Authorization : `Bearer ${accessToken}`
             }
         })
-        console.log(response.statusText)
+        console.log(colors("Published").blue+"");
 
     } catch (error) {
-        console.error("Error occurred while publishint to LinkedIn!", error);
+        console.error(colors("Error occurred while publish to LinkedIn!").red+"", error);
     }
 }
 
-async function oauth(){
+async function webserver(msg:string, str?:string, imageUrl?:string){
     const app = express();
     const PORT = 8080;
     const CLIENT_ID = process.env.LINKEDIN_CLIENT_ID;
@@ -154,46 +165,211 @@ async function oauth(){
                     Authorization: `Bearer ${accessToken}`
                 }
             })
-            console.log(personal.data);
+
             const username = personal.data.sub;
 
             fs.appendFileSync('.env', `LINKEDIN_TOKEN=${accessToken}\n`);
             fs.appendFileSync('.env', `LINKEDIN_USERNAME=${username}\n`);
 
-            console.log("You can break the process Ctrl+C")
+            console.log(colors("You can now break the process Ctrl+C").blue+"");
 
             return res.send("You can close this tab");
         } catch ( error : any) {
-            console.error(error.message);
+            console.error(colors(error.message).red+"");
             res.status(500).send(error.message);
         }
     });
 
+    app.get("/preview.jpg", async (req, res) => {
+        const filePath = path.resolve(imageUrl||"example.jpg");
+        console.log(filePath)
+        res.sendFile(filePath)
+    })
+
+    app.get("/preview", async (req, res) => {
+
+        const imageBlock = imageUrl ? `
+                <div class="post-media">
+                    <img src="/preview.jpg" alt="Imagen adjunta al post" class="attached-image">
+                </div>
+            ` : '';
+
+        const htmlContent = `
+<!DOCTYPE html>
+<html lang="eng">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LinkedIn Preview</title>
+    <style>
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: #f3f2ef; /* Fondo de LinkedIn */
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+        }
+        .post-container {
+            width: 100%;
+            max-width: 550px;
+            background-color: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            margin-top: 20px;
+            padding: 16px;
+        }
+        .post-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        .avatar {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .user-info strong {
+            display: block;
+            font-size: 14px;
+            font-weight: 600;
+            color: rgba(0,0,0,.9);
+        }
+        .user-info span {
+            display: block;
+            font-size: 12px;
+            color: rgba(0,0,0,.6);
+        }
+        .post-content {
+            font-size: 14px;
+            line-height: 1.4;
+            color: rgba(0,0,0,.9);
+            margin-bottom: 10px;
+            /* Simulación del estilo de texto */
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .post-media {
+            /* Mueve el margen superior al div contenedor de la imagen */
+            margin: 10px -16px 0; /* Esto compensa el padding de .post-container para que la imagen sea "edge-to-edge" */
+            overflow: hidden; /* Para contener bordes redondeados si se aplica */
+        }
+        .attached-image {
+            width: 100%;
+            height: auto;
+            display: block;
+            /* Si la imagen va a tope, solo se redondean las esquinas de abajo del post-container
+               Pero para un look limpio, aplicamos un sutil borde redondeado a la imagen también. */
+            object-fit: cover;
+        }
+        
+        /* Estilo para el texto original y explicación */
+        .original-text-box {
+            border-top: 1px solid #e0e0e0;
+            margin-top: 20px;
+            padding-top: 10px;
+            font-size: 12px;
+            color: #888;
+        }
+        .original-text-box pre {
+            background: #f9f9f9;
+            padding: 10px;
+            border-radius: 4px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            margin: 5px 0 0 0;
+            border: 1px solid #eee;
+        }
+        .close-info {
+            text-align: center;
+            margin-top: 20px;
+            font-size: 12px;
+            color: rgba(0,0,0,.6);
+        }
+    </style>
+</head>
+<body>
+    <div class="main-wrapper">
+        <div class="post-container">
+            <div class="post-header">
+                <img src="avatarUrl" alt="Avatar" class="avatar">
+                <div class="user-info">
+                    <strong>name</strong>
+                    <span>title</span>
+                    <span>1s • <img src="data:image/svg+xml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgMTYgMTYiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyIgZGF0YS1EVE09ImVuX1VTX2FsbCIgZGF0YS1zbmFwcz0iMzYzNi4xNjY0NTI3NDgwODQiIGNsYXNzPSJsaXktZGVzaWduLXBhcmVudC11c2VyLXJldG9saW5lIHNhbWUtbGluZS1wYWRkaW5nLXBhcmVudC11c2VyLXJldG9saW5lIj4gPHBhdGggZD0iTTE2IDguOTY1bC0yLjUtMS43MTYgMi41LTEuNzI1LTIuOTgyLTUuNTE0LTMuMTg4Ljg4NXYzLjQyMUw3LjM0NSA3LjM4OCAyLjY1NSA0LjcyNWMtLjIyMS4xMTUtLjQzLjE5Mi0uNTY1LjI3OS0xLjQxNy44OTktMi4wOSAxLjE0Mi0yLjA5IDEuMTQyVjcuMTlDLS4wNjkgOS4wNy4wOTQgMTAuMjEuNTkgMTEuODQ4YzEuMTM4IDIuODcgMy41NDQgMy4xNTIgMy41NDQgMy4xNTIgNi42MDktLjI0OSA3LjczNC0uNzQ2IDcuNzM0LS43NDZzMi40NjItLjUzNyAyLjgyMS0zLjA4NWMuMjMxLTEuNjkyLS41NzctMi42MDQtLjU3Ny0yLjYwNHoiIGZpbGw9IiM2NjY2NjYiPjwvcGF0aD4gPC9zdmc+" width="12" height="12" style="vertical-align: middle;"></span>
+                </div>
+            </div>
+
+            <div class="post-content">
+                ${str}
+            </div>
+            la imagen ${imageUrl} ${imageBlock}
+        </div>
+        
+    </div>
+</body>
+</html>            
+        `;
+        res.setHeader('Content-Type', 'text/html');
+        res.send(htmlContent);
+    });
+
     app.listen(PORT, () => {
-        console.log(`Open http://localhost:${PORT}/login to retrieve an accessToken`);
+        console.log(colors(`Open http://localhost:${PORT}${msg}`).blue+"");
     });
 }
+
+async function oauth(){
+    return webserver('/login to retrieve an accessToken')
+}
+
+async function preview(str:string, image?:string){
+    return webserver("/preview to preview the post", str.replace("\\n", "<br/>"), image)
+}
+
+interface PublishOptions {
+    footer?: string;
+    image?: string;
+    token?: string;
+    user?: string;
+    preview: boolean;
+    file: boolean;
+}
+
+async function main(args: string[], options: PublishOptions){
+
+    const footer = !options.footer ? "" : options.footer.split(",").map((s:string)=>`#${s}`).join(" ");
+    const original = options.file ? fs.readFileSync(args[0]).toString() : args.join(" ");
+    const text = original + `\n${footer}`
+
+    if( options.preview ){
+        await preview(`${text}`, options.image);
+    }else{
+        const token = (options.token || process.env.LINKEDIN_TOKEN)
+        if (!token ) {
+            await oauth()
+        } else {
+            await publish(text, options.image, token, (options.user || process.env.LINKEDIN_USERNAME))
+        }
+    }
+
+}
+
+program
+    .command('login')
+    .description('start the oauth flow')
+    .action(oauth);
 
 program
     .version("1.0.0")
     .description("A cli tool to publish to Linkedin")
-    .option("-h, --hashtags <value>", "a comms separated hashtags")
-    .option("-i, --image <value>", "attach an image to the post")
+    .option("--footer <string>", "a comma separated hashtags to include as footer")
+    .option("-i, --image <file>", "attach an image to the post")
     .option("-t, --token <value>", "oauth token")
     .option("-u, --user <value>", "linkedin author userId")
-    .arguments("<string>", "the text to publish")
-    .parse(process.argv);
+    .option("-f, --file", "text is a file path to post")
+    .option("-p, --preview", "don't publish only show the post")
+    .arguments("<text...>", "the text (or file path if -f is specified) to publish")
+    .action(main);
 
-const options = program.opts();
-
-const hashtags = (options.hashtags || "").split(",").map( (s:string) =>
-    `{hashtag|\\#|${s}}`).join(" ");
-
-const text = program.args.join(" ") + `\n${hashtags}`
-
-const token = (options.token||process.env.LINKEDIN_TOKEN)
-if( !token ){
-    oauth()
-}else {
-    publish(text, options.image, token, (options.user || process.env.LINKEDIN_USERNAME))
-}
+program.parse(process.argv);

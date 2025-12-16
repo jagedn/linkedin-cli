@@ -1,0 +1,8 @@
+Great news
+
+Linkedin CLI now allows you to write your post in a file and publish when you're ready
+
+Also, it includes the --preview option to open a webpage showing your post so you can validate before to publish
+
+More features are coming, stay tune.
+

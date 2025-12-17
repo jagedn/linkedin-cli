@@ -46,7 +46,7 @@ axios.interceptors.response.use(
     }
 );
 
-async function upload(image:string, accessToken:string, author:string){
+async function uploadImage(image:string, accessToken:string, author:string){
 
     var payload = {
         "initializeUploadRequest": {
@@ -82,9 +82,45 @@ async function upload(image:string, accessToken:string, author:string){
 }
 
 
+async function uploadPdf(pdf:string, accessToken:string, author:string){
+
+    var payload = {
+        "initializeUploadRequest": {
+            "owner": "urn:li:person:"+author
+        }
+    }
+
+    interface ResponseInit {
+        value: {
+            uploadUrl: string;
+            document: string;
+        }
+    }
+
+    const respInit = await axios.post<ResponseInit>(`/rest/documents?action=initializeUpload`,payload, {
+        headers: {
+            Authorization: `Bearer ${accessToken}`
+        }
+    });
+
+    const uploadUrl = respInit.data.value.uploadUrl;
+    const mediaId = respInit.data.value.document;
+    const fsImage = fs.readFileSync(pdf);
+
+    await axios.put<string>(uploadUrl, fsImage, {
+        headers: {
+            'Content-Type': 'application/octet-stream',
+            Authorization: `Bearer ${accessToken}`
+        }
+    })
+    console.log(colors("Document upload successfully. ").blue+"");
+    return mediaId;
+}
+
 interface PublishOptions {
     footer?: string;
     image?: string;
+    pdf?: string;
     token?: string;
     user?: string;
     preview: boolean;
@@ -94,8 +130,10 @@ interface PublishOptions {
 
 async function publishPost(converted: string, opts: PublishOptions, accessToken:string, author:string) {
     const image = opts.image;
+    const pdf = opts.pdf;
     try {
-        var imageId = await(image ? upload(image, accessToken, author) : null);
+        var imageId = await(image ? uploadImage(image, accessToken, author) : null);
+        var pdfId = await(pdf ? uploadPdf(pdf, accessToken, author) : null);
         var payload :any = {
             "author": "urn:li:person:"+author,
             "commentary": converted,
@@ -106,11 +144,11 @@ async function publishPost(converted: string, opts: PublishOptions, accessToken:
             "lifecycleState": "PUBLISHED",
             "isReshareDisabledByAuthor": false,
         };
-        if( imageId ){
+        if( imageId || pdfId){
             (payload as any).content = {
                     "media": {
-                        "title": "Imagen",
-                        "id": imageId
+                        "title": "Attachment",
+                        "id": imageId || pdfId,
                     }
             }
         }
@@ -352,6 +390,13 @@ async function main(args: string[], options: PublishOptions){
     const original = options.file ? fs.readFileSync(args[0]).toString() : args.join(" ");
     const text = original + `\n${footer}`
 
+    const image = options.image;
+    const pdf = options.pdf;
+    if( image && pdf ){
+        console.log(colors("Image and Pdf are incompatible, choose one").red+"");
+        return false;
+    }
+
     if( options.preview ){
         await preview(`${text}`, options.image);
     }else{
@@ -374,6 +419,7 @@ program
     .version("1.0.0")
     .description("A cli tool to publish to Linkedin")
     .option("-i, --image <file>", "attach an image to the post")
+    .option("--pdf <file>", "attach a pdf to the post (usefully for carrusel)")
     .option("-f, --file", "text is a file path to post")
     .option("-p, --preview", "don't publish only show the post")
     .option("--footer <string>", "a comma separated hashtags to include as footer")

@@ -1,6 +1,7 @@
 #! /usr/bin/env node
 import express, { Request, Response } from "express";
 import colors from 'colorts';
+const os = require('os');
 import {config as configDotenv} from 'dotenv'
 import axios, { AxiosError, AxiosResponse } from 'axios';
 import path from "node:path";
@@ -9,7 +10,9 @@ const { Command } = require("commander");
 const fs = require("fs");
 
 const program = new Command();
-configDotenv()
+configDotenv({
+    path: path.join(os.homedir(), ".linkedincli"),
+})
 
 axios.defaults.baseURL = 'https://api.linkedin.com';
 axios.interceptors.request.use((config) => {
@@ -78,11 +81,58 @@ async function upload(image:string, accessToken:string, author:string){
     return mediaId;
 }
 
-async function publish(text: string, image?:string, accessToken?:string, author?:string) {
-    if(!accessToken){
+
+interface PublishOptions {
+    footer?: string;
+    image?: string;
+    token?: string;
+    user?: string;
+    preview: boolean;
+    file: boolean;
+}
+
+
+async function publishPost(converted: string, opts: PublishOptions, accessToken:string, author:string) {
+    const image = opts.image;
+    try {
+        var imageId = await(image ? upload(image, accessToken, author) : null);
+        var payload :any = {
+            "author": "urn:li:person:"+author,
+            "commentary": converted,
+            "visibility": "PUBLIC",
+            "distribution": {
+                "feedDistribution": "MAIN_FEED"
+            },
+            "lifecycleState": "PUBLISHED",
+            "isReshareDisabledByAuthor": false,
+        };
+        if( imageId ){
+            (payload as any).content = {
+                    "media": {
+                        "title": "Imagen",
+                        "id": imageId
+                    }
+            }
+        }
+
+        const response = await axios.post('/rest/posts', payload, {
+            headers: {
+                Authorization : `Bearer ${accessToken}`
+            }
+        })
+        const id = response.headers["x-restli-id"];
+        console.log(colors(`Published, id ${id}`).blue+"");
+
+    } catch (error) {
+        console.error(colors("Error occurred while publish to LinkedIn!").red+"", error);
+    }
+}
+
+async function publish(text: string, opts: PublishOptions, accessToken?:string, author?:string) {
+    if (!accessToken) {
         throw new Error("Token not provided");
     }
-    if(!author){
+    if (!author) {
         throw new Error("Author not provided");
     }
 
@@ -92,38 +142,7 @@ async function publish(text: string, image?:string, accessToken?:string, author?
     }).replace("\\n", "\n");
 
 
-    try {
-        var imageId = await(image ? upload(image, accessToken, author) : null);
-        var payload = {
-            "author": "urn:li:person:"+author,
-            "commentary": converted,
-            "visibility": "PUBLIC",
-            "distribution": {
-                "feedDistribution": "MAIN_FEED"
-            },
-            "lifecycleState": "PUBLISHED",
-            "isReshareDisabledByAuthor": false,
-            "content":{}
-        };
-        if( imageId ){
-            payload["content"] = {
-                    "media": {
-                        "title": "Imagen",
-                        "id": imageId
-                    }
-            }
-        }
-
-        await axios.post('/rest/posts', payload, {
-            headers: {
-                Authorization : `Bearer ${accessToken}`
-            }
-        })
-        console.log(colors("Published").blue+"");
-
-    } catch (error) {
-        console.error(colors("Error occurred while publish to LinkedIn!").red+"", error);
-    }
+    return publishPost(converted, opts, accessToken, author);
 }
 
 async function webserver(msg:string, str?:string, imageUrl?:string){
@@ -168,8 +187,8 @@ async function webserver(msg:string, str?:string, imageUrl?:string){
 
             const username = personal.data.sub;
 
-            fs.appendFileSync('.env', `LINKEDIN_TOKEN=${accessToken}\n`);
-            fs.appendFileSync('.env', `LINKEDIN_USERNAME=${username}\n`);
+            fs.appendFileSync(path.join(os.homedir(), ".linkedincli"), `LINKEDIN_TOKEN=${accessToken}\n`);
+            fs.appendFileSync(path.join(os.homedir(), ".linkedincli"), `LINKEDIN_USERNAME=${username}\n`);
 
             console.log(colors("You can now break the process Ctrl+C").blue+"");
 
@@ -327,15 +346,6 @@ async function preview(str:string, image?:string){
     return webserver("/preview to preview the post", str.replace("\\n", "<br/>"), image)
 }
 
-interface PublishOptions {
-    footer?: string;
-    image?: string;
-    token?: string;
-    user?: string;
-    preview: boolean;
-    file: boolean;
-}
-
 async function main(args: string[], options: PublishOptions){
 
     const footer = !options.footer ? "" : options.footer.split(",").map((s:string)=>`#${s}`).join(" ");
@@ -349,7 +359,7 @@ async function main(args: string[], options: PublishOptions){
         if (!token ) {
             await oauth()
         } else {
-            await publish(text, options.image, token, (options.user || process.env.LINKEDIN_USERNAME))
+            await publish(text, options, token, (options.user || process.env.LINKEDIN_USERNAME))
         }
     }
 
@@ -363,12 +373,12 @@ program
 program
     .version("1.0.0")
     .description("A cli tool to publish to Linkedin")
-    .option("--footer <string>", "a comma separated hashtags to include as footer")
     .option("-i, --image <file>", "attach an image to the post")
-    .option("-t, --token <value>", "oauth token")
-    .option("-u, --user <value>", "linkedin author userId")
     .option("-f, --file", "text is a file path to post")
     .option("-p, --preview", "don't publish only show the post")
+    .option("--footer <string>", "a comma separated hashtags to include as footer")
+    .option("-t, --token <value>", "oauth token")
+    .option("-u, --user <value>", "linkedin author userId")
     .arguments("<text...>", "the text (or file path if -f is specified) to publish")
     .action(main);
 

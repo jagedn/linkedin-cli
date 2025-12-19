@@ -1,13 +1,17 @@
 #! /usr/bin/env node
-import express, { Request, Response } from "express";
-import colors from 'colorts';
-const os = require('os');
-import {config as configDotenv} from 'dotenv'
-import axios, { AxiosError, AxiosResponse } from 'axios';
 import path from "node:path";
+const fs = require("fs");
+const os = require('os');
+
+import express, { Request, Response } from "express";
+
+import colors from 'colorts';
 const { Command } = require("commander");
 
-const fs = require("fs");
+import {config as configDotenv} from 'dotenv'
+import axios, { AxiosError } from 'axios';
+import {execSync} from "node:child_process";
+
 
 const program = new Command();
 configDotenv({
@@ -131,6 +135,7 @@ interface PublishOptions {
 async function publishPost(converted: string, opts: PublishOptions, accessToken:string, author:string) {
     const image = opts.image;
     const pdf = opts.pdf;
+
     try {
         var imageId = await(image ? uploadImage(image, accessToken, author) : null);
         var pdfId = await(pdf ? uploadPdf(pdf, accessToken, author) : null);
@@ -164,6 +169,7 @@ async function publishPost(converted: string, opts: PublishOptions, accessToken:
     } catch (error) {
         console.error(colors("Error occurred while publish to LinkedIn!").red+"", error);
     }
+
 }
 
 async function publish(text: string, opts: PublishOptions, accessToken?:string, author?:string) {
@@ -177,7 +183,7 @@ async function publish(text: string, opts: PublishOptions, accessToken?:string, 
     const regexHashtag = /#([a-zA-Z0-9_]+)/g;
     const converted = text.replace(regexHashtag, (match, hashtagText) => {
         return `{hashtag|\\#|${hashtagText}}`;
-    }).replace("\\n", "\n");
+    }).replace(/\\n/g, "\n");
 
 
     return publishPost(converted, opts, accessToken, author);
@@ -238,8 +244,7 @@ async function webserver(msg:string, str?:string, imageUrl?:string){
     });
 
     app.get("/preview.jpg", async (req, res) => {
-        const filePath = path.resolve(imageUrl||"example.jpg");
-        console.log(filePath)
+        const filePath = path.resolve(imageUrl || "example.jpg");
         res.sendFile(filePath)
     })
 
@@ -247,7 +252,7 @@ async function webserver(msg:string, str?:string, imageUrl?:string){
 
         const imageBlock = imageUrl ? `
                 <div class="post-media">
-                    <img src="/preview.jpg" alt="Imagen adjunta al post" class="attached-image">
+                    <img src="/preview.jpg" class="attached-image">
                 </div>
             ` : '';
 
@@ -388,13 +393,19 @@ async function main(args: string[], options: PublishOptions){
 
     const footer = !options.footer ? "" : options.footer.split(",").map((s:string)=>`#${s}`).join(" ");
     const original = options.file ? fs.readFileSync(args[0]).toString() : args.join(" ");
-    const text = original + `\n${footer}`
+    const text = original + `\n\n${footer}`
 
     const image = options.image;
     const pdf = options.pdf;
     if( image && pdf ){
         console.log(colors("Image and Pdf are incompatible, choose one").red+"");
         return false;
+    }
+
+    if( image  == "clipboard") {
+        const tempPath = '/tmp/linkedin.png';
+        execSync(`xclip -selection clipboard -t image/png -o > ${tempPath}`);
+        options.image = tempPath;
     }
 
     if( options.preview ){

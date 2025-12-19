@@ -3,7 +3,7 @@ import path from "node:path";
 const fs = require("fs");
 const os = require('os');
 
-import express, { Request, Response } from "express";
+import express from "express";
 
 import colors from 'colorts';
 const { Command } = require("commander");
@@ -12,7 +12,8 @@ import {config as configDotenv} from 'dotenv'
 import axios, { AxiosError } from 'axios';
 import {execSync} from "node:child_process";
 
-import inquirer from 'inquirer';
+import { select } from '@inquirer/prompts';
+import inquirer from "inquirer";
 
 const program = new Command();
 configDotenv({
@@ -128,7 +129,7 @@ interface PublishOptions {
     pdf?: string;
     token?: string;
     user?: string;
-    preview: boolean;
+    clipboard: boolean;
     file: boolean;
 }
 
@@ -174,9 +175,11 @@ async function publishPost(converted: string, opts: PublishOptions, accessToken:
 }
 
 async function publish(text: string, opts: PublishOptions, accessToken?:string, author?:string) {
+    accessToken = accessToken ? accessToken : process.env.LINKEDIN_TOKEN;
     if (!accessToken) {
         throw new Error("Token not provided");
     }
+    author = author ? author : process.env.LINKEDIN_USERNAME;
     if (!author) {
         throw new Error("Author not provided");
     }
@@ -189,74 +192,102 @@ async function publish(text: string, opts: PublishOptions, accessToken?:string, 
     return publishPost(converted, opts, accessToken, author);
 }
 
-async function webserver(msg:string, str?:string, imageUrl?:string){
-    const app = express();
-    const PORT = 8080;
-    const CLIENT_ID = process.env.LINKEDIN_CLIENT_ID;
-    const CLIENT_SECRET = process.env.LINKEDIN_CLIENT_SECRET;
-    const REDIRECT_URI = `http://localhost:${PORT}/oauth/callback/linkedin`;
+async function webserver(msg:string, str?:string, imageUrl?:string) {
+    return new Promise((resolve, reject) => {
+        const app = express();
+        const PORT = 8080;
+        const CLIENT_ID = process.env.LINKEDIN_CLIENT_ID;
+        const CLIENT_SECRET = process.env.LINKEDIN_CLIENT_SECRET;
+        const REDIRECT_URI = `http://localhost:${PORT}/oauth/callback/linkedin`;
 
-    app.get('/login', (req, res) => {
-        const scopes = [
-            'profile',
-            'email',
-            'w_member_social',
-            'r_profile_basicinfo',
-            'r_verify',
-            'openid'
-        ].join("%20")
-        const linkedinAuthUrl = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${CLIENT_ID}&redirect_uri=${REDIRECT_URI}&state=123456&scope=`+scopes;
-        res.redirect(linkedinAuthUrl);
-    });
+        const server = app.listen(PORT, () => {
+            console.log(colors(`Open http://localhost:${PORT}${msg}`).blue + "");
+        });
 
-    app.get('/oauth/callback/linkedin', async (req, res) => {
-        const code = req.query.code;
-        try {
-            const tokenResponse = await axios.post('https://www.linkedin.com/oauth/v2/accessToken', null, {
-                params: {
-                    grant_type: 'authorization_code',
-                    code: code,
-                    redirect_uri: REDIRECT_URI,
-                    client_id: CLIENT_ID,
-                    client_secret: CLIENT_SECRET,
-                },
-            });
-            const accessToken = tokenResponse.data.access_token;
+        app.post('/exit', (req, res) => {
+            res.send("closed")
+            setTimeout(function () {
+                server.close((err) => {
+                    if (err) {
+                        console.error('Error closing server:', err);
+                    } else {
+                        console.log('Server successfully closed.');
+                    }
+                    resolve(true);
+                });
+            }, 3000);
+        });
 
-            const personal = await axios.get("/v2/userinfo", {
-                headers: {
-                    Authorization: `Bearer ${accessToken}`
-                }
-            })
+        app.get('/login', (req, res) => {
+            const scopes = [
+                'profile',
+                'email',
+                'w_member_social',
+                'r_profile_basicinfo',
+                'r_verify',
+                'openid'
+            ].join("%20")
+            const linkedinAuthUrl = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${CLIENT_ID}&redirect_uri=${REDIRECT_URI}&state=123456&scope=` + scopes;
+            res.redirect(linkedinAuthUrl);
+        });
 
-            const username = personal.data.sub;
+        app.get('/oauth/callback/linkedin', async (req, res) => {
+            const code = req.query.code;
+            try {
+                const tokenResponse = await axios.post('https://www.linkedin.com/oauth/v2/accessToken', null, {
+                    params: {
+                        grant_type: 'authorization_code',
+                        code: code,
+                        redirect_uri: REDIRECT_URI,
+                        client_id: CLIENT_ID,
+                        client_secret: CLIENT_SECRET,
+                    },
+                });
+                const accessToken = tokenResponse.data.access_token;
 
-            fs.appendFileSync(path.join(os.homedir(), ".linkedincli"), `LINKEDIN_TOKEN=${accessToken}\n`);
-            fs.appendFileSync(path.join(os.homedir(), ".linkedincli"), `LINKEDIN_USERNAME=${username}\n`);
+                const personal = await axios.get("/v2/userinfo", {
+                    headers: {
+                        Authorization: `Bearer ${accessToken}`
+                    }
+                })
 
-            console.log(colors("You can now break the process Ctrl+C").blue+"");
+                const username = personal.data.sub;
 
-            return res.send("You can close this tab");
-        } catch ( error : any) {
-            console.error(colors(error.message).red+"");
-            res.status(500).send(error.message);
-        }
-    });
+                fs.appendFileSync(path.join(os.homedir(), ".linkedincli"), `LINKEDIN_TOKEN=${accessToken}\n`);
+                fs.appendFileSync(path.join(os.homedir(), ".linkedincli"), `LINKEDIN_USERNAME=${username}\n`);
 
-    app.get("/preview.jpg", async (req, res) => {
-        const filePath = path.resolve(imageUrl || "example.jpg");
-        res.sendFile(filePath)
-    })
+                setTimeout(function () {
+                    server.close((err) => {
+                        if (err) {
+                            console.error('Error closing server:', err);
+                        } else {
+                            console.log('Server successfully closed.');
+                        }
+                        resolve(true);
+                    });
+                }, 3000);
 
-    app.get("/preview", async (req, res) => {
+                return res.send("You can close this tab");
+            } catch (error: any) {
+                console.error(colors(error.message).red + "");
+                res.status(500).send(error.message);
+            }
+        });
 
-        const imageBlock = imageUrl ? `
+        app.get("/preview.jpg", async (req, res) => {
+            const filePath = path.resolve(imageUrl || "example.jpg");
+            res.sendFile(filePath)
+        })
+
+        app.get("/preview", async (req, res) => {
+
+            const imageBlock = imageUrl ? `
                 <div class="post-media">
                     <img src="/preview.jpg" class="attached-image">
                 </div>
             ` : '';
 
-        const htmlContent = `
+            const htmlContent = `
 <!DOCTYPE html>
 <html lang="eng">
 <head>
@@ -366,20 +397,20 @@ async function webserver(msg:string, str?:string, imageUrl?:string){
                 ${str}
             </div>
             ${imageBlock}
+        </div>        
+        <div class="post-container">
+            <form action="/exit" method="post"><button type="submit">Close</button></form>
         </div>
-        
-    </div>
+    </div>   
 </body>
 </html>            
         `;
-        res.setHeader('Content-Type', 'text/html');
-        res.send(htmlContent);
-    });
-
-    app.listen(PORT, () => {
-        console.log(colors(`Open http://localhost:${PORT}${msg}`).blue+"");
-    });
+            res.setHeader('Content-Type', 'text/html');
+            res.send(htmlContent);
+        });
+    })
 }
+
 
 async function oauth(){
     return webserver('/login to retrieve an accessToken')
@@ -389,59 +420,87 @@ async function preview(str:string, image?:string){
     return webserver("/preview to preview the post", str.replace("\\n", "<br/>"), image)
 }
 
-async function post(args: string[], options: PublishOptions){
 
-    const footer = !options.footer ? "" : options.footer.split(",").map((s:string)=>`#${s}`).join(" ");
-    const original = options.file ? fs.readFileSync(args[0]).toString() : args.join(" ");
-    const text = original + `\n\n${footer}`
+async function cli( this: any, args:string[]) {
 
-    const image = options.image;
-    const pdf = options.pdf;
+    const allOptions : PublishOptions = this.optsWithGlobals();
+
+    const footer = !allOptions.footer ? "" : allOptions.footer.split(",").map((s:string)=>`#${s}`).join(" ");
+    const text = allOptions.file ? fs.readFileSync(args[0]).toString() : args.join(" ");
+
+    const image = allOptions.image;
+    const pdf = allOptions.pdf;
     if( image && pdf ){
         console.log(colors("Image and Pdf are incompatible, choose one").red+"");
         return false;
     }
 
-    if( image  == "clipboard") {
-        const tempPath = '/tmp/linkedin.png';
-        execSync(`xclip -selection clipboard -t image/png -o > ${tempPath}`);
-        options.image = tempPath;
-    }
 
-    if( options.preview ){
-        await preview(`${text}`, options.image);
-    }else{
-        const token = (options.token || process.env.LINKEDIN_TOKEN)
-        if (!token ) {
-            await oauth()
-        } else {
-            await publish(text, options, token, (options.user || process.env.LINKEDIN_USERNAME))
+    let postData = text;
+
+    let exit = false;
+    while( !exit ) {
+        process.stdout.write('\u001b[2J\u001b[0;0H'); // Limpia la pantalla de forma nativa
+        const answer = await select(
+            {
+                message: 'Selection:',
+                choices: [
+                    { name: '📝 Login', value: 'login' },
+                    { name: '📝 Edit', value: 'edit' },
+                    { name: '👁️  Preview', value: 'preview' },
+                    { name: '🚀 Publish', value: 'publish' },
+                    new inquirer.Separator(),
+                    { name: '❌ Exit', value: 'exit' }
+                ]
+            });
+
+        if( allOptions.clipboard ) {
+            const tempPath = '/tmp/linkedin.png';
+            execSync(`xclip -selection clipboard -t image/png -o > ${tempPath}`);
+            allOptions.image = tempPath;
+        }
+
+        switch (answer) {
+            case 'login':
+                await oauth()
+                break;
+
+            case 'edit':
+                const { newContent } = await inquirer.prompt([
+                    {
+                        type: 'editor',
+                        name: 'newContent',
+                        message: 'Edit:',
+                        default: postData,
+                        waitUserInput: true
+                    }
+                ]);
+                postData = newContent;
+                break;
+
+            case 'preview':
+                if (!postData) {
+                    console.log("⚠️  Content is required.");
+                    break;
+                }
+                await preview(postData + `\n\n${footer}`, allOptions.image);
+                break;
+
+            case 'publish':
+                if (!postData) {
+                    console.log("❌ Content is required.");
+                } else {
+                    await publish(postData + `\n\n${footer}`, allOptions)
+                    exit = true;
+                }
+                break;
+
+            case 'exit':
+                exit = true;
+                break;
         }
     }
-
-}
-
-async function editPost(this: any) {
-    // Esto combina las opciones del subcomando con las del comando padre
-    const allOptions : PublishOptions = this.optsWithGlobals();
-    const answers = await inquirer.prompt([
-        {
-            type: 'editor',
-            name: 'content',
-            message: 'Write the text of the post:',
-            validate: (text) => text.length > 0 || 'Text required.'
-        },
-        {
-            type: 'confirm',
-            name: 'publish',
-            message: 'Do you really want to publish?',
-        }
-    ]);
-    if( !answers.publish ){
-        return "abort";
-    }
-    const text = answers.content;
-    return post([text], allOptions);
+    return true;
 }
 
 async function main(args :any) {
@@ -449,9 +508,9 @@ async function main(args :any) {
         .version("1.0.0")
         .description("A cli tool to publish to Linkedin")
         .option("-i, --image <file>", "attach an image to the post")
+        .option("-c, --clipboard", "use image from clipboard")
         .option("--pdf <file>", "attach a pdf to the post (usefully for carrusel)")
         .option("-f, --file", "text is a file path to post")
-        .option("-p, --preview", "don't publish only show the post")
         .option("--footer <string>", "a comma separated hashtags to include as footer")
         .option("-t, --token <value>", "oauth token")
         .option("-u, --user <value>", "linkedin author userId")
@@ -462,15 +521,10 @@ async function main(args :any) {
         .action(oauth);
 
     program
-        .command('edit')
-        .description('open an editor before to post')
-        .action(editPost);
+        .arguments("[text...]", "publish directly this text (of file if -f is provided)")
+        .action(cli);
 
-    program
-        .arguments("<text...>", "the text (or file path if -f is specified) to publish")
-        .action(post);
-
-    await program.parseAsync(args);
+    program.parse(args);
 }
 
 main(process.argv).then(()=>{});

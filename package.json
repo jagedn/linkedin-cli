@@ -4,10 +4,11 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "preview": "ts-node ./src/index.ts -p --footer=a,b -i example.jpeg Nuevo \\#PetProject linkedcli \\\\nPublica desde la consola y así no tener ni que entrar a leer post de la AI",
-    "previewfile": "ts-node ./src/index.ts -p --footer=PetProject,LinkedinCli -i example.jpeg -f example.txt",
     "build": "npx tsc",
-    "login": "ts-node ./src/index.ts login"
+    "preview": "npx tsc && ts-node ./src/index.ts -p --footer=a,b -i example.jpeg Nuevo \\#PetProject linkedcli \\\\nPublica desde la consola y así no tener ni que entrar a leer post de la AI",
+    "previewfile": "npx tsc && ts-node ./src/index.ts -p --footer=PetProject,LinkedinCli -i example.jpeg -f example.txt",
+    "login": "npx tsc && ts-node ./src/index.ts login",
+    "edit": "npx tsc && ts-node ./src/index.ts --image kk.png edit "
   },
   "keywords": [],
   "author": "",
@@ -18,10 +19,12 @@
     "colorts": "^0.1.63",
     "commander": "^14.0.2",
     "dotenv": "^17.2.3",
-    "express": "^5.2.1"
+    "express": "^5.2.1",
+    "inquirer": "^13.1.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
+    "@types/inquirer": "^9.0.9",
     "@types/node": "^25.0.2",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"

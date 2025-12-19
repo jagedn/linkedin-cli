@@ -12,6 +12,7 @@ import {config as configDotenv} from 'dotenv'
 import axios, { AxiosError } from 'axios';
 import {execSync} from "node:child_process";
 
+import inquirer from 'inquirer';
 
 const program = new Command();
 configDotenv({
@@ -184,7 +185,6 @@ async function publish(text: string, opts: PublishOptions, accessToken?:string, 
     const converted = text.replace(regexHashtag, (match, hashtagText) => {
         return `{hashtag|\\#|${hashtagText}}`;
     }).replace(/\\n/g, "\n");
-
 
     return publishPost(converted, opts, accessToken, author);
 }
@@ -389,7 +389,7 @@ async function preview(str:string, image?:string){
     return webserver("/preview to preview the post", str.replace("\\n", "<br/>"), image)
 }
 
-async function main(args: string[], options: PublishOptions){
+async function post(args: string[], options: PublishOptions){
 
     const footer = !options.footer ? "" : options.footer.split(",").map((s:string)=>`#${s}`).join(" ");
     const original = options.file ? fs.readFileSync(args[0]).toString() : args.join(" ");
@@ -421,22 +421,56 @@ async function main(args: string[], options: PublishOptions){
 
 }
 
-program
-    .command('login')
-    .description('start the oauth flow')
-    .action(oauth);
+async function editPost(this: any) {
+    // Esto combina las opciones del subcomando con las del comando padre
+    const allOptions : PublishOptions = this.optsWithGlobals();
+    const answers = await inquirer.prompt([
+        {
+            type: 'editor',
+            name: 'content',
+            message: 'Write the text of the post:',
+            validate: (text) => text.length > 0 || 'Text required.'
+        },
+        {
+            type: 'confirm',
+            name: 'publish',
+            message: 'Do you really want to publish?',
+        }
+    ]);
+    if( !answers.publish ){
+        return "abort";
+    }
+    const text = answers.content;
+    return post([text], allOptions);
+}
 
-program
-    .version("1.0.0")
-    .description("A cli tool to publish to Linkedin")
-    .option("-i, --image <file>", "attach an image to the post")
-    .option("--pdf <file>", "attach a pdf to the post (usefully for carrusel)")
-    .option("-f, --file", "text is a file path to post")
-    .option("-p, --preview", "don't publish only show the post")
-    .option("--footer <string>", "a comma separated hashtags to include as footer")
-    .option("-t, --token <value>", "oauth token")
-    .option("-u, --user <value>", "linkedin author userId")
-    .arguments("<text...>", "the text (or file path if -f is specified) to publish")
-    .action(main);
+async function main(args :any) {
+    program
+        .version("1.0.0")
+        .description("A cli tool to publish to Linkedin")
+        .option("-i, --image <file>", "attach an image to the post")
+        .option("--pdf <file>", "attach a pdf to the post (usefully for carrusel)")
+        .option("-f, --file", "text is a file path to post")
+        .option("-p, --preview", "don't publish only show the post")
+        .option("--footer <string>", "a comma separated hashtags to include as footer")
+        .option("-t, --token <value>", "oauth token")
+        .option("-u, --user <value>", "linkedin author userId")
 
-program.parse(process.argv);
+    program
+        .command('login')
+        .description('start the oauth flow')
+        .action(oauth);
+
+    program
+        .command('edit')
+        .description('open an editor before to post')
+        .action(editPost);
+
+    program
+        .arguments("<text...>", "the text (or file path if -f is specified) to publish")
+        .action(post);
+
+    await program.parseAsync(args);
+}
+
+main(process.argv).then(()=>{});
